@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SQLDatabase
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
+from langgraph.graph import START, StateGraph
 
 
 PARSER = argparse.ArgumentParser(description="command line flags.")
@@ -17,14 +18,17 @@ PARSER.add_argument('--db', type=str, help='db name')
 ARGS = PARSER.parse_args()
 LLM_VERSION = "gemini-2.0-flash"
 LLM_PROVIDER = "google_genai"
+POSTGRESQL_ADDRESS = "localhost:5432"
 
 
 class ModelAdapter:
+    def _init_db(self):
+        self.db = SQLDatabase.from_uri(f"postgresql://{ARGS.user}:{ARGS.pwd}@{POSTGRESQL_ADDRESS}/{ARGS.db}")
+
     def _init_llm(self):
         if not os.environ.get("GOOGLE_API_KEY"):
             raise Exception("API key missing for Google Gemini")
         self.model = init_chat_model(LLM_VERSION, model_provider=LLM_PROVIDER)
-        self.db = SQLDatabase.from_uri(f"postgresql://{ARGS.user}:{ARGS.pwd}@localhost:5432/{ARGS.db}")
 
     def _init_prompt_config(self):
         self.system_template = """
@@ -47,34 +51,35 @@ class ModelAdapter:
         self.prompt_template = ChatPromptTemplate.from_messages(
             [("system", self.system_template), ("user", "Question: {input}")]
         )
-    def __init__(self):
-        self._init_llm()
-        self._init_prompt_config()
 
     class State(TypedDict):
         question: str
         query: str
         result: str
         answer: str
+        config: dict[str,int]
 
     class DBQuery(TypedDict):
         """Generated SQL query."""
         query: Annotated[str, ..., "Valid SQL query."]
 
-    def build_query(self, state:State, k):
-        prompt = self.prompt_template.invoke({"dialect": self.db.dialect, "top_k": k, "table_info": self.db.get_table_info(), "input": state["question"]})
+    def _build_query(self, state:State):
+        prompt = self.prompt_template.invoke({
+            "dialect": self.db.dialect, 
+            "top_k": state["config"]["top_k"], 
+            "table_info": self.db.get_table_info(), 
+            "input": state["question"]})
         self.structured_model = self.model.with_structured_output(self.DBQuery)
         response = self.structured_model.invoke(prompt)
-        print(f"querying {response['query']}")
         return {**state, "query": response["query"]}
 
-    def execute_query(self, state: State):
-        self.execute_query_tool = QuerySQLDatabaseTool(db=self.db)
-        return {**state, "result": self.execute_query_tool.invoke(state["query"])}
+    def _execute_query(self, state: State):
+        self._execute_query_tool = QuerySQLDatabaseTool(db=self.db)
+        return {**state, "result": self._execute_query_tool.invoke(state["query"])}
 
-    def invoke(self, state:State):
+    def _buid_answer(self, state:State):
         prompt = (
-            "Given the following user question, corresponding SQL query, and SQL result, answer the user question.\n\n"
+            "Given the following user question, corresponding SQL query, and SQL result, answer in short the user question as the vendor of products.\n\n"
             f"Question: {state['question']}\n"
             f"SQL Query: {state['query']}\n"
             f"SQL Result: {state['result']}"
@@ -82,7 +87,24 @@ class ModelAdapter:
         response = self.model.invoke(prompt)
         return {**state, "answer": response.content}
 
+    def _init_workflow(self):
+        graph_builder = StateGraph(ModelAdapter.State).add_sequence(
+            [self._build_query, self._execute_query, self._buid_answer]
+        )
+        graph_builder.add_edge(START, "_build_query")
+        self.graph = graph_builder.compile()
+
+    def __init__(self):
+        self._init_db()
+        self._init_llm()
+        self._init_prompt_config()
+        self._init_workflow()
+
+    def invoke(self, state:State):
+        return self.graph.invoke(state)
+
 
 adapter = ModelAdapter()
-response = adapter.invoke(adapter.execute_query(adapter.build_query({"question":"How many products are there?"},10)))
+question = input("> ")
+response = adapter.invoke({"question":question,"config":{"top_k":10}})
 print(response['answer'])
