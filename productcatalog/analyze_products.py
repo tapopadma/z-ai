@@ -5,7 +5,7 @@ from typing_extensions import Annotated, TypedDict, List
 from typing import Any
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SQLDatabase
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
@@ -18,6 +18,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain import hub
 from langchain_core.documents import Document
+from langgraph.checkpoint.memory import MemorySaver
 
 
 PARSER = argparse.ArgumentParser(description="command line flags.")
@@ -43,25 +44,28 @@ class ModelAdapter:
         self.model = init_chat_model(LLM_VERSION, model_provider=LLM_PROVIDER)
 
     def _init_prompt_config(self):
-        self.system_template = """
-            Given an input question, create a syntactically correct {dialect} query to
-            run to help find the answer. Unless the user specifies in his question a
-            specific number of examples they wish to obtain, always limit your query to
-            at most {top_k} results. You can order the results by a relevant column to
-            return the most interesting examples in the database.
+        system_template = """
+            Given your previous conversations with user in chronological order
+            and user's current question, based on user's intent create a syntactically 
+            correct {dialect} query to run to help find the answer. If the user's question is about
+            a specific product or set of products then build db query only for that product(s) not every product.
 
+            Additionally, unless the user specifies in his question a specific number of examples 
+            they wish to obtain, always limit your query to at most {top_k} results. You can order 
+            the results by a relevant column to return the most interesting examples in the database.
             Never query for all the columns from a specific table, only ask for a the
             few relevant columns given the question.
-
             Pay attention to use only the column names that you can see in the schema
             description. Be careful to not query for columns that do not exist. Also,
             pay attention to which column is in which table.
-
             Only use the following tables:
             {table_info}
             """
         self.prompt_template = ChatPromptTemplate.from_messages(
-            [("system", self.system_template), ("user", "Question: {input}")]
+            [("system", system_template), ("user", """
+                Our previous conversations: {message_history}
+                My current question: {input}
+                """)]
         )
 
     def _init_agent(self):
@@ -122,6 +126,16 @@ class ModelAdapter:
         rag_response: str
         config: dict[str,Any]
         answer: str
+        messages: [] # to maintain the context
+
+    def _build_message_history(self, state:RagState):
+        messages = state.get("messages", [])
+        history = ""
+        for msg in messages[:-1]:
+            role = msg.get("role", "unknown").capitalize()
+            content = msg.get("content", "")
+            history += f"{role}: {content}\n"
+        return history.strip()
 
     def _build_query(self, state:RagState):
         if state['config']['advanced']:
@@ -130,6 +144,7 @@ class ModelAdapter:
             "dialect": self.db.dialect, 
             "top_k": state["config"]["top_k"], 
             "table_info": self.db.get_table_info(), 
+            "message_history": self._build_message_history(state),
             "input": state["question"]})
         self.structured_model = self.model.with_structured_output(self.DBQuery)
         response = self.structured_model.invoke(prompt)
@@ -155,8 +170,22 @@ class ModelAdapter:
         response = self.model.invoke(prompt)
         return {'db_response': response.content}
 
+    def _build_search_query_with_context(self, state:RagState):
+        system_template = """
+            Given your previous conversation with user about a product(s). Extract the product name from it and respond a message
+            strictly in the format 'product feedback for products (product_name)' where (product_name) is the product
+            mentioned in your given response. If there's no valid product name extractable then (product name) should be just ''.
+            """            
+        prompt_template = ChatPromptTemplate.from_messages(
+            [("system", system_template), ("user", "Our previous conversations: {conversations}")]
+        )
+        prompt = prompt_template.invoke({'conversations': self._build_message_history(state)})
+        response = self.model.invoke(prompt)
+        print(response.content)
+        return response.content
+
     def _retrive_docs(self, state:RagState):
-        retrieved_docs = self.vector_store.similarity_search(state["question"])
+        retrieved_docs = self.vector_store.similarity_search(self._build_search_query_with_context(state))
         return {"context": retrieved_docs}
 
     def _generate_from_context(self, state:RagState):
@@ -166,15 +195,31 @@ class ModelAdapter:
         return {"rag_response": response.content}
 
     def _merge_smart(self, state:RagState):
-        prompt = (
-            "Given the following user question about products, corresponding response about products generated by db,"
-            " and response about product feedbacks generated from text via RAG. "
-            "Answer in short the user question as the vendor of products. Incorporate the responses in your answer only if they contain sharable information."
-            f"Question: {state['question']}\n"
-            f"DB response: {state['db_response']}\n"
-            f"Text response: {state['rag_response']}"
+        system_template = """
+            Given your previous conversations with the user in chronological order, user's current question, 
+            tool's response from the db about product details which may have any possible relevance to user's current question,
+            tool's response from text data via RAG about feedbacks on the products that might have any possible relevance to user's 
+            current question. Based on these, answer in short to the user question as a vendor of the products.
+
+            While answering incorporate a tool's response if it has actual relevance to user's intent since some tool responses
+            mayn't have relevance to user's current question in some scenarios.
+            """
+        prompt_template = ChatPromptTemplate.from_messages(
+            [("system", system_template), ("user", """
+                Our previous conversations: {message_history}
+                My current question: {input}
+                Tool response to my current question based on DB data: {db_response}
+                Tool response to my current question based on text data: {rag_response}
+                """)]
         )
+        prompt = prompt_template.invoke({
+            "message_history": self._build_message_history(state),
+            "input": state["question"],
+            "db_response": state["db_response"],
+            "rag_response": state["rag_response"]
+            })
         response = self.model.invoke(prompt)
+        state['messages'].append(AIMessage(content=response.content))
         return {"answer": response.content}
 
     def _search_db(self, state:RagState):
@@ -198,7 +243,9 @@ class ModelAdapter:
             True: "_search_db",
             False: "_build_query"
         })
-        self.rag_graph = graph_builder.compile()
+        self.message_memory = MemorySaver()
+        self.message_thread_config = {"configurable":{"thread_id":"common"}}
+        self.rag_graph = graph_builder.compile(checkpointer=self.message_memory)
 
     def __init__(self):
         self._init_db()
@@ -213,7 +260,8 @@ class ModelAdapter:
         self._build_rag_workflow()
 
     def invoke(self, state:RagState):
-        response = self.rag_graph.invoke(state)
+        state["messages"] = [HumanMessage(content=question)]
+        response = self.rag_graph.invoke(state, self.message_thread_config) # use persistent context by default
         return response
 
 
