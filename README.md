@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/venom.jpg" alt="Venom Logo" width="50%"/>
+  <img src="assets/venom.jpg" alt="Venom Logo" width="100"/>
 </p>
 
 # Overview
