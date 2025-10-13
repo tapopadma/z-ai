@@ -1,9 +1,16 @@
 <p align="center">
-  <img src="assets/bot.jpeg" alt="LilBot Logo" width="100"/>
+  <img src="assets/venom.jpg" alt="Venom Logo" width="100"/>
 </p>
 
-# myai
+# Overview
 
-myai is the AI assistant that answers customers about varieties of product related queries on a e-shop. myai will soon be extended to serve more use cases.
+Venom AI - a lightweight AI assistant providing generic support to an individual user based on its study of user's daily activities. The goal is to achieve 
+capability to track activities from a wide variety of signals, provide assistance and influence the user.
 
-![LilBot in action](assets/demo.gif)
+## Shop quality analyzer
+
+This module analyses & reports about products in the store based on customer perspective from the past activities.
+
+### Small Demo
+
+![Product analyzer demo](assets/demo.gif)
