@@ -9,7 +9,7 @@ capability to track activities from a wide variety of signals, provide assistanc
 
 ## Shop quality analyzer
 
-This module analyses & reports about products in the store based on customer perspective from the past activities.
+This module leverages agentic framework on top of LLM to analyse & report about products in the store based on customer perspectives from the past activities.
 
 ### Small Demo
 
