@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/venom.jpg" alt="Venom Logo" width="20%"/>
-</p>
-
 # Overview
 
 Venom AI - a lightweight AI assistant providing generic support to an individual user based on its study of user's daily activities. The goal is to achieve 
