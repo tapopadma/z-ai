@@ -1,10 +1,6 @@
-<p align="center">
-  <img src="assets/venom.jpg" alt="Venom" width="150"/>
-</p>
-
 # Overview
 
-Venom AI - a lightweight AI assistant providing generic support to an individual user based on its study of user's daily activities. The goal is to achieve 
+Z-AI - a lightweight AI assistant providing generic support to an individual user based on its study of user's daily activities. The goal is to achieve 
 capability to track activities from a wide variety of signals, provide assistance and influence the user.
 
 ## Shop quality analyzer
