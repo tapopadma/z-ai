@@ -1,0 +1,23 @@
+python src/train.py \
+    --model_name_or_path "/home/tapopadma/TinyLlama/TinyLlama-1.1B-Chat-v1.0" \
+    --stage sft \
+    --finetuning_type lora \
+    --lora_target "q_proj,v_proj" \
+    --dataset_dir "/home/tapopadma/z-ai/model/feed" \
+    --dataset "health_advice_train" \
+    --output_dir "/home/tapopadma/LLaMA-Factory/outputs/tinyllama-healthadvice-cpu" \
+    --do_train true \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --learning_rate 1e-5 \
+    --max_seq_length 256 \
+    --fp16 false \
+    --bf16 false \
+    --optim "adamw_torch" \
+    --save_total_limit 1 \
+    --save_steps 50 \
+    --logging_steps 10 \
+    --lr_scheduler_type "linear" \
+    --use_cpu true \
+    --overwrite_output_dir true

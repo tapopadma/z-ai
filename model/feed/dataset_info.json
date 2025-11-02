@@ -1,0 +1,11 @@
+{
+  "health_advice_train": {
+    "file_name": "health_advice_train.jsonl",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "history": "history"
+    }
+  }
+}
