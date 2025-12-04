@@ -1,2 +1,11 @@
 .idea
 tokens.txt
+model/LlamaGGUF
+model/Llama/*.gguf
+model/Llama/.cache
+model/Llama/TinyLlama-1.1B-Chat-v1.0/.cache
+model/Llama/TinyLlama-1.1B-Chat-v1.0/.gitattributes
+model/Llama/TinyLlama-1.1B-Chat-v1.0/model.safetensors
+model/finetuned/.cache
+model/finetuned/*.gguf
+model/finetuned/.gitattributes
