@@ -11,6 +11,9 @@ This module leverages agentic framework on top of LLM to analyse & report about 
 
 ![Product analyzer demo](assets/demo.gif)
 
+## Model
+The model is [trained](model/README.md) based on data from user activity.
+
 ## Use cases
 - Automated learning from the user's activities across the videos, audios & texts recorded, musics played, photos clicked in mobile device, and suggesting the user for a happier & better life.
 - Suggesting useful activities, fun places & productive tips based on the past user activity logs around visited places, health diagnosis reports, documented recurring symptoms.
